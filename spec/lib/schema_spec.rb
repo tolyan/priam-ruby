@@ -41,14 +41,25 @@ describe Schema do
 
 	describe "#dump" do
 
+
 		it "should not try to create keyspace if it's already there" do
 			ks = double(:name => @schema.name)
 			Schema.db.should_receive(:keyspaces).and_return([ks])
 
 			@schema.dump.should be_false
 		end
+
+		it "should create column families in cassandra" do
+			@schema.dump
+			ks = Schema.db.keyspaces.select {|k| k.name == @schema.name}
+			ks[0].column_family_names.count.should eql(8)
+			
+			# teardown
+			@schema.whipeout!
+		end
 	end
 
+	
 	describe "#combinations" do
 
 		it "should return exactly 1 attributes combination if no sub-totals are required" do
@@ -67,13 +78,47 @@ describe Schema do
 
 end
 
+describe Schema, "#insert" do
+
+		before(:all) do
+			@schema = Schema.new('cube', 'event_ts', ['duration','count'], ['Code', 'Category', 'Detail'])
+			@schema.dump
+		end
+
+		before(:each) do
+
+		  	@factory_hash = {:timestamp => '2012-05-20', :attributes => {:Category => 'Business', :Code => '045', :Detail => 'random'},\
+				:facts => {:count => 1, :duration => 20}}
+
+			@where_id = factory_hash[:timestamp].gsub(/-/,'')	
+			@test_cf = @schema.column_families.last.name
+		end
+		
+		it "should correctly populate row_key" do
+			@schema.insert(@factory_hash)
+
+			result = Schema.db.execute("SELECT * from #{@test_cf} WHERE id =  '#{@where_id}'")
+			result.rows.should eq(1)
+		end
+
+	end
+
 describe CubeColumnFamily do
 
 	before(:each) do
 	  @ccf = CubeColumnFamily.new(['Category','Code','Detail'], 'count')
+
 	end
 
 	it "name should be correctly populated" do
 		@ccf.name.should eql('Category__Code__Detail__count')
 	end
+
+	it "should match correct attributes and facts combinations" do
+			@factory_hash = {:attributes => {:Category => 'Business', :Code => '045', :Detail => 'random'},\
+				:facts => {:count => 1, :duration => 20}}
+	  		@ccf.match(@factory_hash).should be(true)
+	end
+
+
 end

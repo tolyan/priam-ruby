@@ -12,6 +12,15 @@ class CubeColumnFamily
 		@fact = fact
 		@name = attributes.join('__') + "__#{fact}"
 	end
+
+	def match(record)
+
+		if @attributes == record[:attributes].map{|k,v| k.to_s}.sort and record[:facts].map{|k,v| k.to_s}.include(@fact)
+			return true
+		else
+			return false
+		end
+	end
 end
 
 class Schema
@@ -62,15 +71,25 @@ class Schema
 			@@db.execute("CREATE KEYSPACE #{name} WITH strategy_class='org.apache.cassandra.locator.SimpleStrategy'
                 AND strategy_options:replication_factor=1")
 
-			db.execute("USE #{name}")
+			@@db.execute("USE #{name}")
 
 			# create column families
-			attributes_combination.each { |e|
-				#@@db.execute("CREATE COLUMNFAMILY ... id varchar PRIMARY KEY")
+			@column_families.each { |cf|
+				@@db.execute("CREATE COLUMNFAMILY #{cf.name} (id varchar PRIMARY KEY)")
 			}
         else
             return false    
 		end
+	end
+
+	def dump!
+		self.whipeout!
+		self.dump
+	end
+
+	# DATA INSERT
+	def insert(timestamp, attributes, facts)
+		@@db.execute(INSERT)
 	end
 
 	# HELPERS
