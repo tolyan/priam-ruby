@@ -4,6 +4,41 @@ module SchemaHelper
 	#TBD
 end
 
+class CubedRecord
+	attr_reader :timestamp, :attributes, :facts
+
+	def initialize(timestamp, attributes, facts)
+		@timestamp = timestamp
+		@facts = facts
+		@attributes = attributes.sort
+	end
+
+	def ==(another_record)
+		@timestamp == another_record.timestamp and @facts == another_record.facts and @attributes == another_record.attributes
+
+	end
+
+	def project(column_family)
+
+		result_attributes = @attributes.select {|k,v| column_family.attributes.include?(k.to_s)}
+		result_facts = @facts.select {|k,v| column_family.fact == k.to_s}
+	
+		if result_attributes.length == column_family.attributes.length and result_facts.length == 1
+			result = CubedRecord.new(@timestamp, result_attributes, result_facts)
+		else
+			false
+		end
+	end
+
+	def id
+		@timestamp.gsub(/-/,'')
+	end
+
+	def insert_string
+		self.id + ', ' + @attributes.map{ |k,v| "'" + v.to_s + "'"}.join(', ') + ', ' + @facts.map{ |k,v| v.to_s}.first
+	end
+end
+
 class CubeColumnFamily
 	attr_reader :name, :attributes, :fact
 
@@ -13,14 +48,10 @@ class CubeColumnFamily
 		@name = attributes.join('__') + "__#{fact}"
 	end
 
-	def match(record)
-
-		if @attributes == record[:attributes].map{|k,v| k.to_s}.sort and record[:facts].map{|k,v| k.to_s}.include(@fact)
-			return true
-		else
-			return false
-		end
+	def insert_string
+		"INSERT into #{@name} (id, #{@attributes.join(', ')}, #{fact})"
 	end
+
 end
 
 class Schema
@@ -88,8 +119,16 @@ class Schema
 	end
 
 	# DATA INSERT
-	def insert(timestamp, attributes, facts)
-		@@db.execute(INSERT)
+	def insert(record)
+		@@db.execute("USE #{name}")
+		@column_families.each { |cf|
+			if insert_record = record.project(cf)
+				statement = cf.insert_string + " VALUES (#{insert_record.insert_string})"
+			
+				@@db.execute(statement)
+			end
+		}
+		
 	end
 
 	# HELPERS

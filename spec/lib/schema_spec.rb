@@ -1,5 +1,5 @@
 
-require '.\lib\schema'
+require './lib/schema'
 
 describe Schema do
 
@@ -81,23 +81,29 @@ end
 describe Schema, "#insert" do
 
 		before(:all) do
-			@schema = Schema.new('cube', 'event_ts', ['duration','count'], ['Code', 'Category', 'Detail'])
+			@schema = Schema.new('cube', 'event_ts', ['duration','caunt'], ['Code', 'Category', 'Detail'])
 			@schema.dump
 		end
 
+		after(:all) do
+			@schema.whipeout!
+		end
+
 		before(:each) do
+			@timestamp = '2012-05-20'
+			@attributes = {:Category => 'Business', :Code => '045', :Detail => 'random'}
+			@facts = {:count => 1, :duration => 20}
 
-		  	@factory_hash = {:timestamp => '2012-05-20', :attributes => {:Category => 'Business', :Code => '045', :Detail => 'random'},\
-				:facts => {:count => 1, :duration => 20}}
+			@record = CubedRecord.new(@timestamp, @attributes, @facts)	
 
-			@where_id = factory_hash[:timestamp].gsub(/-/,'')	
+			@where_id = @timestamp.gsub(/-/,'')	
 			@test_cf = @schema.column_families.last.name
 		end
 		
 		it "should correctly populate row_key" do
-			@schema.insert(@factory_hash)
-
-			result = Schema.db.execute("SELECT * from #{@test_cf} WHERE id =  '#{@where_id}'")
+			@schema.insert(@record)
+			puts "#{@test_cf}"
+			result = Schema.db.execute("SELECT * from Category__Code__Detail__duration WHERE id =  '20120520'")
 			result.rows.should eq(1)
 		end
 
@@ -114,11 +120,56 @@ describe CubeColumnFamily do
 		@ccf.name.should eql('Category__Code__Detail__count')
 	end
 
-	it "should match correct attributes and facts combinations" do
-			@factory_hash = {:attributes => {:Category => 'Business', :Code => '045', :Detail => 'random'},\
-				:facts => {:count => 1, :duration => 20}}
-	  		@ccf.match(@factory_hash).should be(true)
+	it "insert string should be correctly populated" 
+
+end
+
+describe CubedRecord do
+
+	before(:each) do
+		@timestamp = '2012-05-20'
+		@attributes = {:Category => 'Business', :Code => '045', :Detail => 'random'}
+		@facts = {:count => 1, :duration => 20}
+
+		@record = CubedRecord.new(@timestamp, @attributes, @facts)		
+
+		@cf = CubeColumnFamily.new(['Category','Code','Detail'], 'count')
 	end
 
+	it "should be projected to appropriate Column Family" do
+		@record.project(@cf).should be_true
+	end
 
+	it "should return correct projection result with appropriate Column Family" do
+		@result_record = CubedRecord.new(@timestamp, @attributes, {:count => 1})
+
+		@record.project(@cf).should == @result_record
+	end
+
+	it "should return correct projection result in case of sub-totals with appropriate Column Family" do
+		@cf = CubeColumnFamily.new(['Category','Code'], 'count')
+
+		@result_record = CubedRecord.new(@timestamp, {:Category => 'Business', :Code => '045'}, {:count => 1})
+
+		@record.project(@cf).should == @result_record
+	end
+
+	it "should return correct projection result in case of broad record with appropriate Column Family" do
+		@record = CubedRecord.new(@timestamp, @attributes.merge({:New => 'new'}), @facts.merge({:new => 1}))
+		@result_record = CubedRecord.new(@timestamp, @attributes, {:count => 1})
+
+		@record.project(@cf).should == @result_record
+	end
+
+	it "should return false if Column Family has inappropriate attribute" do
+		@cf = CubeColumnFamily.new(['Category','Code','Error'], 'count')
+
+		@record.project(@cf).should be_false
+	end
+
+	it "should return false if Column Family has inappropriate fact" do
+		@cf = CubeColumnFamily.new(['Category','Code','Detail'], 'error')
+
+		@record.project(@cf).should be_false
+	end
 end
